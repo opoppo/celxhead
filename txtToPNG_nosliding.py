@@ -16,7 +16,6 @@ def loadTxt(file):
             x.insert(count, int(items[1]))
             y.insert(count, int(items[2]))
             pol.insert(count, int(items[3]))
-            # print(items)
 
             count = count + 1
 
@@ -25,14 +24,21 @@ def loadTxt(file):
 
 if __name__ == "__main__":
 
-    for i in range(2):
-        txtpath='./txt/%d'%i+'/cortxt/'
-        imgpath='./img/%d'%i+'/'
+    for i in range(16):
+        txtpath = './txt/%d' % i + '/cortxt/'
+        imgpath = './img/%d' % i + '/'
         for fpathe, dirs, fs in os.walk(txtpath):
-            for f in fs:
+            for p, f in enumerate(fs):
 
-                file = txtpath+f
-                imgoutputpath = imgpath+f.split('.')[0]+'/'
+                if p%3==0:
+                    imgoutputpath = imgpath +'/updown/'+ f.split('.')[0] + '/'
+                elif (p-1)%3==0:
+                    imgoutputpath = imgpath + '/left/' + f.split('.')[0] + '/'
+                elif (p - 2) % 3 == 0:
+                    imgoutputpath = imgpath + '/right/' + f.split('.')[0] + '/'
+
+                file = txtpath + f
+
 
                 if not os.path.exists(imgoutputpath):
                     os.makedirs(imgoutputpath)
@@ -47,7 +53,7 @@ if __name__ == "__main__":
                 start_idx = 0
                 startTime = 0
                 endTime = 0
-                stepTime = 10000 / 0.08
+                stepTime = 5000 / 0.08
                 imgCount = 1
 
                 while startTime < t[-1]:
@@ -57,29 +63,26 @@ if __name__ == "__main__":
 
                     data_x = np.array(x[start_idx:idx]).reshape((-1, 1))
                     data_y = np.array(y[start_idx:idx]).reshape((-1, 1))
-                    data = np.column_stack((data_x, data_y))
+                    data_t = np.array(t[start_idx:idx]).reshape((-1, 1))
+                    data = np.column_stack((data_x, data_y, data_t))
                     data_filter = data
 
                     for i in range(0, data_filter.shape[0]):
-                        img[data_filter[i][1] - 1][data_filter[i][0] - 1][0] = 255  # channel NONE
-                        img[data_filter[i][1] - 1][data_filter[i][0] - 1][1] += 1  # channel frequency
-                        img[data_filter[i][1] - 1][data_filter[i][0] - 1][2] = t[i]  # channel time stamp
-
-                    img[:][:][1] = 255 * 2 * (1 / (1 + np.exp(-img[:][:][1])) - 0.5)
-                    # a=img[:][:][1]
-                    # print( a[a>0] )
-                    img[:][:][2] = 255 * (img[:][:][2] - startTime) / stepTime
-                    # a=img[:][:][2]
-                    # print( a[a>0] )
+                        img[int(data_filter[i][1] - 1)][int(data_filter[i][0] - 1)][1] = 255  # channel NONE
+                        img[int(data_filter[i][1] - 1)][int(data_filter[i][0] - 1)][0] += 85  # channel frequency
+                        img[int(data_filter[i][1] - 1)][int(data_filter[i][0] - 1)][2] = 255 * (
+                                data_filter[i][2] - t[start_idx]) / (t[idx] - t[start_idx])  # channel time stamp
 
                     start_idx = idx
-
+                    startTime = t[idx]
+                    # print(sum(sum(img)))
+                    # if sum(sum(sum(img))) > 480:
                     # img = cv2.flip(img, 0)
                     cv2.imshow('dvs', img)
                     cv2.waitKey(5)
                     imgFullFile = imgoutputpath + ('%05d' % imgCount) + '.png'
                     cv2.imwrite(imgFullFile, img)
+                    imgCount = imgCount + 1
 
                     img[:] = 0
-                    startTime = t[idx]
-                    imgCount = imgCount + 1
+                    # print('.')
