@@ -21,6 +21,7 @@ if __name__ == "__main__":
                     img = torch.from_numpy(img)
                     imgseq.append(img)
                 imgtensor = torch.cat(imgseq,dim=-1)
+                imgtensor.resize_(224,224,600)
                 outpath = imgoutputpath + category + '/'
                 if not os.path.exists(outpath):
                     os.makedirs(outpath)

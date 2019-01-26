@@ -27,10 +27,27 @@ class OutputLayer(nn.Module):
         super(OutputLayer, self).__init__()
         # self.fc = nn.Linear(2048, (5,5), bias=True)
         self.fc = nn.Sequential(
-            nn.Linear(2048, 225, bias=True),
-            nn.ReLU(inplace=True),
-            nn.Linear(225, 15, bias=True),
-            Reshape(-1, 3, 5)
+            nn.Linear(2048, 3, bias=True),
+            # nn.ReLU(inplace=True),
+            # Reshape(-1, 255),
+            # nn.Linear(225, 3, bias=True),
+        )
+
+    def forward(self, X):
+        y = self.fc(X)
+        # print(y.size())
+        return y
+
+
+class InputLayer(nn.Module):
+    def __init__(self):
+        super(InputLayer, self).__init__()
+        # self.fc = nn.Linear(2048, (5,5), bias=True)
+        self.fc = nn.Sequential(
+            nn.Conv2d(600, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),
+            nn.BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=3, stride=2, padding=0, dilation=1, ceil_mode=True),
         )
 
     def forward(self, X):
@@ -46,8 +63,8 @@ class OutputLayerInceptionv4(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(1536, 225, bias=True),
             nn.ReLU(inplace=True),
-            nn.Linear(225, 15, bias=True),
-            Reshape(-1, 3, 5)
+            Reshape(-1, 255),
+            nn.Linear(225, 3, bias=True),
         )
 
     def forward(self, X):
@@ -72,7 +89,7 @@ def get_triangular_lr(iteration, stepsize, base_lr, max_lr):
 # ====================================================================================================
 training = 1  # ????========================================================================================
 resume = 0  # ====010:  test model   11X: train model   10X: train new   011: refresh dataset
-generateNewSets = 0  # REGENERATE the datasets !!!!!!!!!!!!!!!
+generateNewSets = 1  # REGENERATE the datasets !!!!!!!!!!!!!!!
 # ====================================================================================================
 
 
@@ -83,51 +100,38 @@ if training and not resume:
     # net.fc = OutputLayer()
     net = pretrainedmodels.__dict__['se_resnext101_32x4d'](num_classes=1000, pretrained='imagenet')  # 136  20s
     net.last_linear = OutputLayer()
+    net.layer0 = InputLayer()
     # net = pretrainedmodels.__dict__['inceptionv4'](num_classes=1000, pretrained='imagenet')  # 186  20s
     # net.last_linear = OutputLayerInceptionv4()
     net = torch.nn.DataParallel(net.cuda(), device_ids=[0, 1])
 
 if generateNewSets:
 
-    img = np.load('./testset/img.npy')
-    imgtensor = torch.FloatTensor(img)
-    imgtensor = imgtensor.permute(0, 3, 2, 1)
-    print(imgtensor.size())
-    del img
-    anndata = np.load('./testset/anndatafixed.npy')
-    anntensor = torch.FloatTensor(anndata).cuda()
-    del anndata
-    rawset = data.TensorDataset(imgtensor, anntensor)
+    rawset = torchvision.datasets.DatasetFolder('./dataset/', torch.load, ['pt'])
 
     (trainset, valset, testset) = data.random_split(rawset, [int(len(rawset) * 0.70), int(len(rawset) * 0.15),
                                                              len(rawset) - int(len(rawset) * 0.70) - int(
                                                                  len(rawset) * 0.15)])
-    torch.save(trainset, './testset/dataset/trainset')
-    torch.save(valset, './testset/dataset/valset')
-    torch.save(testset, './testset/dataset/testset')
+    print("datasets ", len(trainset), len(valset), len(testset))
 else:
-    trainset = torch.load('./testset/dataset/trainset')
-    valset = torch.load('./testset/dataset/valset')
-    testset = torch.load('./testset/dataset/testset')
-
-print("datasets ", len(trainset), len(valset), len(testset))
+    pass
 
 train_loader = data.DataLoader(
     dataset=trainset,
-    batch_size=186,  # 256 for 4 GPUs
+    batch_size=1,  # 256 for 4 GPUs
     shuffle=False,
     drop_last=False,
     # pin_memory=True,
-    num_workers=24,
+    # num_workers=24,
     # sampler=data.SubsetRandomSampler(list(range(0, 3000, 1)))
 )
 val_loader = data.DataLoader(
     dataset=valset,
-    batch_size=4,  # 256 for 4 GPUs
+    batch_size=1,  # 256 for 4 GPUs
     shuffle=False,
     drop_last=False,
     # pin_memory=True,
-    num_workers=24,
+    # num_workers=24,
     # sampler=data.SubsetRandomSampler(list(range(3000, 3500, 1)))
 )
 test_loader = data.DataLoader(
@@ -136,21 +140,21 @@ test_loader = data.DataLoader(
     shuffle=False,
     drop_last=False,
     # pin_memory=True,
-    num_workers=24,
+    # num_workers=24,
     # sampler=data.SubsetRandomSampler(list(range(3500, 4239, 1)))
 )
 
 if resume and training:
-    net = torch.load('net-0.31')
-    print('net resumed')  # ==============================================================
+    net = torch.load('nettmp')
+    print('net tmp resumed')  # ==============================================================
 
 # Predicting or Testing============
 if resume and (not training):
-    net = torch.load('net-0.31')
+    net = torch.load('nettt')
     print('nettt loaded')
 
 optimizer = torch.optim.Adam(params=net.parameters(), lr=0.001, weight_decay=0.001)
-mseloss = nn.MSELoss(reduction='mean')
+# mseloss = nn.MSELoss(reduction='mean')
 # lambda1=lambda epoch: 10**np.random.uniform(-3,-6)
 lambda1 = lambda epoch: get_triangular_lr(epoch, 100, 10 ** (-3), 10 ** (0))
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda1)
@@ -158,7 +162,7 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda1)
 # training
 if training:
 
-    EPOCH = 500
+    EPOCH = 5000
     break_flag = False
     prevvalloss, prevtrainloss = 10e30, 10e30
     ppp = 0
@@ -175,15 +179,16 @@ if training:
         if break_flag is True:
             break
 
-        for step, (x, bboxes) in enumerate(train_loader):
+        for step, (x, targets) in enumerate(train_loader):
             if break_flag is True:
                 break
-
-            bboxes_out = net(x)
+            x = x.permute(0, 3, 1, 2)
+            x = x.type(torch.cuda.FloatTensor)
+            out = net(x)
             del x
 
             # print(bboxes_out.size(),bboxes.size())
-            loss = mseloss(bboxes_out, bboxes)
+            loss = nn.CrossEntropyLoss(out, targets)
             # epochTloss += loss.item()
             epochTloss = loss.item()
 
@@ -208,7 +213,7 @@ if training:
                 bboxes_out = net(x)
                 del x
 
-                loss = mseloss(bboxes_out, bboxes)
+                loss = nn.CrossEntropyLoss(out, targets)
                 # epochvalloss += loss.item()
                 epochvalloss = loss.item()
 
@@ -238,20 +243,20 @@ epochtestloss = 0
 for step, (x, bboxes) in enumerate(test_loader):
     bboxes_out = net(x)
     # print(bboxes_out.size(),bboxes.size())
-    x = x.squeeze_().permute(2, 1, 0)
-    emptyImage = x.cpu().detach().numpy().copy()
+    # x = x.squeeze_().permute(2, 1, 0)
+    # emptyImage = x.cpu().detach().numpy().copy()
     # print(emptyImage.shape,type(emptyImage))
     # emptyImage = cv2.resize(emptyImage, (200, 200), interpolation=cv2.INTER_CUBIC)
 
-    del x
+    # del x
     # for j, label in enumerate(bboxes.squeeze_().detach().cpu().numpy()):
-        # box = bBox_2D(label[0], label[1], label[2], label[3], label[4])
-        # # box.Scale(300 / 50, 100, 20)
-        # box.bBoxCalcVertxex()
-        # cv2.line(emptyImage, box.vertex1, box.vertex2, (155, 255, 255), 1, cv2.LINE_AA)
-        # cv2.line(emptyImage, box.vertex2, box.vertex4, (155, 255, 255), 1, cv2.LINE_AA)
-        # cv2.line(emptyImage, box.vertex3, box.vertex1, (155, 255, 255), 1, cv2.LINE_AA)
-        # cv2.line(emptyImage, box.vertex4, box.vertex3, (155, 255, 255), 1, cv2.LINE_AA)
+    # box = bBox_2D(label[0], label[1], label[2], label[3], label[4])
+    # # box.Scale(300 / 50, 100, 20)
+    # box.bBoxCalcVertxex()
+    # cv2.line(emptyImage, box.vertex1, box.vertex2, (155, 255, 255), 1, cv2.LINE_AA)
+    # cv2.line(emptyImage, box.vertex2, box.vertex4, (155, 255, 255), 1, cv2.LINE_AA)
+    # cv2.line(emptyImage, box.vertex3, box.vertex1, (155, 255, 255), 1, cv2.LINE_AA)
+    # cv2.line(emptyImage, box.vertex4, box.vertex3, (155, 255, 255), 1, cv2.LINE_AA)
 
     # for j, label in enumerate(bboxes_out.squeeze_().detach().cpu().numpy()):
     #     box = bBox_2D(label[0], label[1], label[2], label[3], label[4])
@@ -263,15 +268,15 @@ for step, (x, bboxes) in enumerate(test_loader):
     #     cv2.line(emptyImage, box.vertex3, box.vertex1, (155, 255, 55), 1, cv2.LINE_AA)
     #     cv2.line(emptyImage, box.vertex4, box.vertex3, (155, 255, 55), 1, cv2.LINE_AA)
 
-    emptyImage = cv2.flip(emptyImage, 0)
-    emptyImage = cv2.flip(emptyImage, 1)
-    outImage = cv2.resize(emptyImage, (1000, 1000), interpolation=cv2.INTER_CUBIC)
+    # emptyImage = cv2.flip(emptyImage, 0)
+    # emptyImage = cv2.flip(emptyImage, 1)
+    # outImage = cv2.resize(emptyImage, (1000, 1000), interpolation=cv2.INTER_CUBIC)
     # cv2.imshow('scan', outImage)
     print(step)
-    cv2.imwrite('./testset/Result/%d.jpg' % step, outImage)
+    # cv2.imwrite('./testset/Result/%d.jpg' % step, outImage)
     # cv2.waitKey()
 
-    loss = mseloss(bboxes_out, bboxes)
+    loss = nn.CrossEntropyLoss(out, targets)
     epochtestloss = loss.item()
 
 print("loss_total: %.4f" % epochtestloss, " on testset")
