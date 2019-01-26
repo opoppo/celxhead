@@ -53,7 +53,7 @@ if __name__ == "__main__":
                 start_idx = 0
                 startTime = 0
                 endTime = 0
-                stepTime = 5000 / 0.08
+                stepTime = 10000 / 0.08
                 imgCount = 1
 
                 while startTime < t[-1]:
