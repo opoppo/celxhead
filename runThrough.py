@@ -32,10 +32,12 @@ class OutputLayer(nn.Module):
             # Reshape(-1, 255),
             # nn.Linear(225, 3, bias=True),
         )
+        self.cls = nn.LogSoftmax(dim=1)
 
     def forward(self, X):
         y = self.fc(X)
-        # print(y.size())
+        y=self.cls(y)
+        # print(y)
         return y
 
 
@@ -154,7 +156,7 @@ if resume and (not training):
     print('nettt loaded')
 
 optimizer = torch.optim.Adam(params=net.parameters(), lr=0.001, weight_decay=0.001)
-clsloss = nn.CrossEntropyLoss(reduction='mean')
+clsloss = nn.NLLLoss(reduction='mean')
 # lambda1=lambda epoch: 10**np.random.uniform(-3,-6)
 lambda1 = lambda epoch: get_triangular_lr(epoch, 100, 10 ** (-3), 10 ** (0))
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda1)
@@ -189,7 +191,8 @@ if training:
             del x
 
             # print(bboxes_out.size(),bboxes.size())
-            loss = clsloss(out, targets)
+            loss = clsloss(out.mul_((1 - out.exp()).pow_(2)), targets)  # Focal loss
+            # loss = clsloss(out, targets)
             # epochTloss += loss.item()
             epochTloss = loss.item()
 
@@ -210,13 +213,13 @@ if training:
             net.eval()
             epochvalloss = 0
 
-            for step, (x, bboxes) in enumerate(val_loader):
+            for step, (x, targets) in enumerate(val_loader):
                 x = x.type(torch.cuda.FloatTensor)
-                targets = bboxes.type(torch.cuda.LongTensor)
-                bboxes_out = net(x)
+                targets = targets.type(torch.cuda.LongTensor)
+                out = net(x)
                 del x
 
-                loss = clsloss(out, targets)
+                loss = clsloss(out.mul_((1 - out.exp()).pow_(2)), targets)  # Focal loss
                 # epochvalloss += loss.item()
                 epochvalloss = loss.item()
 
@@ -243,10 +246,10 @@ net.eval()
 result = []
 epochtestloss = 0
 
-for step, (x, bboxes) in enumerate(test_loader):
+for step, (x, targets) in enumerate(test_loader):
     x = x.type(torch.cuda.FloatTensor)
-    targets = bboxes.type(torch.cuda.LongTensor)
-    bboxes_out = net(x)
+    targets = targets.type(torch.cuda.LongTensor)
+    out = net(x)
     # print(bboxes_out.size(),bboxes.size())
     # x = x.squeeze_().permute(2, 1, 0)
     # emptyImage = x.cpu().detach().numpy().copy()
@@ -281,7 +284,7 @@ for step, (x, bboxes) in enumerate(test_loader):
     # cv2.imwrite('./testset/Result/%d.jpg' % step, outImage)
     # cv2.waitKey()
 
-    loss = clsloss(out, targets)
+    loss = clsloss(out.mul_((1 - out.exp()).pow_(2)), targets)  # Focal loss
     epochtestloss = loss.item()
 
 print("loss_total: %.4f" % epochtestloss, " on testset")
