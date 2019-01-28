@@ -25,20 +25,19 @@ def loadTxt(file):
 if __name__ == "__main__":
 
     for i in range(16):
-        txtpath = './txt/%d' % i + '/cortxt/'
+        txtpath = 'I:/celexDVS_headpose_data/txt/%d' % i + '/cortxt/'
         imgpath = './img/%d' % i + '/'
         for fpathe, dirs, fs in os.walk(txtpath):
             for p, f in enumerate(fs):
 
-                if p%3==0:
-                    imgoutputpath = imgpath +'/updown/'+ f.split('.')[0] + '/'
-                elif (p-1)%3==0:
+                if p % 3 == 0:
+                    imgoutputpath = imgpath + '/updown/' + f.split('.')[0] + '/'
+                elif (p - 1) % 3 == 0:
                     imgoutputpath = imgpath + '/left/' + f.split('.')[0] + '/'
                 elif (p - 2) % 3 == 0:
                     imgoutputpath = imgpath + '/right/' + f.split('.')[0] + '/'
 
                 file = txtpath + f
-
 
                 if not os.path.exists(imgoutputpath):
                     os.makedirs(imgoutputpath)
@@ -75,14 +74,14 @@ if __name__ == "__main__":
 
                     start_idx = idx
                     startTime = t[idx]
-                    # print(sum(sum(img)))
-                    # if sum(sum(sum(img))) > 480:
-                    # img = cv2.flip(img, 0)
-                    cv2.imshow('dvs', img)
-                    cv2.waitKey(5)
-                    imgFullFile = imgoutputpath + ('%05d' % imgCount) + '.png'
-                    cv2.imwrite(imgFullFile, img)
-                    imgCount = imgCount + 1
+                    print(sum(img[img > 0]))
+                    if sum(img[img > 0]) > 1000000:
+                        # img = cv2.flip(img, 0)
+                        # cv2.imshow('dvs', img)
+                        # cv2.waitKey(5)
+                        imgFullFile = imgoutputpath + ('%05d' % imgCount) + '.png'
+                        cv2.imwrite(imgFullFile, img)
+                        imgCount = imgCount + 1
 
                     img[:] = 0
                     # print('.')

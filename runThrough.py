@@ -9,6 +9,7 @@ import time
 import pretrainedmodels
 import torch.multiprocessing as mp
 import maskrcnn_benchmark
+from torch.nn import functional as F
 
 mp = mp.get_context('spawn')
 
@@ -32,11 +33,11 @@ class OutputLayer(nn.Module):
             # Reshape(-1, 255),
             # nn.Linear(225, 3, bias=True),
         )
-        self.cls = nn.LogSoftmax(dim=1)
+        # self.cls = nn.LogSoftmax(dim=-1)
 
     def forward(self, X):
         y = self.fc(X)
-        y = self.cls(y)
+        # y = self.cls(y)
         # print(y)
         return y
 
@@ -46,7 +47,7 @@ class InputLayer(nn.Module):
         super(InputLayer, self).__init__()
         # self.fc = nn.Linear(2048, (5,5), bias=True)
         self.fc = nn.Sequential(
-            nn.Conv2d(600, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),
+            nn.Conv2d(450, 64, kernel_size=(7, 7), stride=(2, 2), padding=(3, 3), bias=False),
             nn.BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=3, stride=2, padding=0, dilation=1, ceil_mode=True),
@@ -88,6 +89,13 @@ def get_triangular_lr(iteration, stepsize, base_lr, max_lr):
     return lr
 
 
+def focal_loss_class(predictions, targets, alpha=1, gamma=2):
+    loss_class = torch.nn.NLLLoss()
+    predictions = F.log_softmax(predictions, dim=1)  # log(Pt)
+    # print(predictions,targets,'=====================')
+    return alpha * loss_class(predictions.mul((1 - predictions.exp()).pow(gamma)), targets)
+
+
 # ====================================================================================================
 training = 1  # ????========================================================================================
 resume = 0  # ====010:  test model   11X: train model   10X: train new   011: refresh dataset
@@ -95,7 +103,7 @@ generateNewSets = 1  # REGENERATE the datasets !!!!!!!!!!!!!!!
 # ====================================================================================================
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "2,3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 
 if training and not resume:
     # net = torchvision.models.resnet101(pretrained=True)   #256  10s
@@ -107,8 +115,6 @@ if training and not resume:
     # net.last_linear = OutputLayerInceptionv4()
     net = torch.nn.DataParallel(net.cuda(), device_ids=[0, 1])
 
-testsize = -1
-valsize = -1
 if generateNewSets:
 
     rawset = torchvision.datasets.DatasetFolder('./dataset/', torch.load, ['pt'])
@@ -116,11 +122,17 @@ if generateNewSets:
     (trainset, valset, testset) = data.random_split(rawset, [int(len(rawset) * 0.70), int(len(rawset) * 0.15),
                                                              len(rawset) - int(len(rawset) * 0.70) - int(
                                                                  len(rawset) * 0.15)])
-    print("datasets ", len(trainset), len(valset), len(testset))
-    testsize = len(testset)
-    valsize = len(valset)
+    torch.save(trainset, './trainset')
+    torch.save(valset, './valset')
+    torch.save(testset, './testset')
 else:
-    pass
+    trainset = torch.load('./trainset')
+    valset = torch.load('./valset')
+    testset = torch.load('./testset')
+
+print("datasets ", len(trainset), len(valset), len(testset))
+testsize = len(testset)
+valsize = len(valset)
 
 train_loader = data.DataLoader(
     dataset=trainset,
@@ -151,13 +163,13 @@ test_loader = data.DataLoader(
 )
 
 if resume and training:
-    net = torch.load('nettmp')
+    net = torch.load('net-0.2')
     print('net tmp resumed')  # ==============================================================
 
 # Predicting or Testing============
 if resume and (not training):
-    net = torch.load('nettt')
-    print('nettt loaded')
+    net = torch.load('net-0.2')
+    print('netmp loaded')
 
 optimizer = torch.optim.Adam(params=net.parameters(), lr=0.001, weight_decay=0.001)
 clsloss = nn.NLLLoss(reduction='mean')
@@ -168,7 +180,7 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda1)
 # training
 if training:
 
-    EPOCH = 1
+    EPOCH = 1000
     break_flag = False
     prevvalloss, prevtrainloss = 10e30, 10e30
     ppp = 0
@@ -194,8 +206,8 @@ if training:
             out = net(x)
             del x
 
-            # print(bboxes_out.size(),bboxes.size())
-            loss = clsloss(out.mul_((1 - out.exp()).pow_(2)), targets)  # Focal loss
+            # print(out, targets)
+            loss = focal_loss_class(out, targets)  # Focal loss
             # loss = clsloss(out, targets)
             # epochTloss += loss.item()
             epochTloss = loss.item()
@@ -208,30 +220,31 @@ if training:
         totaltime.append(time_end - time_start)
         # losslist.append((epoch, epochTloss))
         lr = get_lr(optimizer)
-        print("EPOCH", epoch, "  loss_total: %.4f" % epochTloss, "  epoch_time: %.2f" % (time_end - time_start),
+        print("EPOCH", epoch, "  loss_total: %.6f" % epochTloss, "  epoch_time: %.2f" % (time_end - time_start),
               "s   estimated_time: %.2f" % ((EPOCH - epoch - 1) * sum(totaltime) / ((epoch + 1) * 60)), "min with lr=%e"
               % lr)
 
-        if (epoch + 1) % 1 == 0:
+        if (epoch + 1) % 5 == 0:
 
             net.eval()
             epochvalloss = 0
-            correct = 0
-            accuracy = -1
+            correctval = 0
+            accuracyval = -1
 
             for step, (x, targets) in enumerate(val_loader):
                 x = x.type(torch.cuda.FloatTensor)
                 targets = targets.type(torch.cuda.LongTensor)
                 out = net(x)
+                # print(torch.argmax(out, dim=1), targets)
                 hit = torch.sum(targets == torch.argmax(out, dim=1))
-                correct += hit
+                correctval += hit
                 del x
 
-                loss = clsloss(out.mul_((1 - out.exp()).pow_(2)), targets)  # Focal loss
+                loss = focal_loss_class(out, targets)  # Focal loss
                 # epochvalloss += loss.item()
                 epochvalloss = loss.item()
-            accuracy = correct.detach().cpu().item() / valsize
-            print("loss_total: %.4f" % epochvalloss, " on validation  accuracy :  %f" % accuracy)
+            accuracyval = correctval.detach().cpu().item() / valsize
+            print("loss_total: %.4f" % epochvalloss, " on validation  accuracy :  %f" % accuracyval)
 
             if epochvalloss <= prevvalloss and epochTloss <= prevtrainloss:
                 torch.save(net, "nettmp")
@@ -253,57 +266,24 @@ if training:
 net.eval()
 result = []
 epochtestloss = 0
-correct = 0
-accuracy = -1
+correcttest = 0
+accuracytest = -1
 
 for step, (x, targets) in enumerate(test_loader):
     x = x.type(torch.cuda.FloatTensor)
     targets = targets.type(torch.cuda.LongTensor)
     out = net(x)
+    print(torch.argmax(out, dim=1), targets)
 
     hit = torch.sum(targets == torch.argmax(out, dim=1))
-    correct += hit
+    correcttest += hit
 
-    # print(bboxes_out.size(),bboxes.size())
-    # x = x.squeeze_().permute(2, 1, 0)
-    # emptyImage = x.cpu().detach().numpy().copy()
-    # print(emptyImage.shape,type(emptyImage))
-    # emptyImage = cv2.resize(emptyImage, (200, 200), interpolation=cv2.INTER_CUBIC)
-
-    # del x
-    # for j, label in enumerate(bboxes.squeeze_().detach().cpu().numpy()):
-    # box = bBox_2D(label[0], label[1], label[2], label[3], label[4])
-    # # box.Scale(300 / 50, 100, 20)
-    # box.bBoxCalcVertxex()
-    # cv2.line(emptyImage, box.vertex1, box.vertex2, (155, 255, 255), 1, cv2.LINE_AA)
-    # cv2.line(emptyImage, box.vertex2, box.vertex4, (155, 255, 255), 1, cv2.LINE_AA)
-    # cv2.line(emptyImage, box.vertex3, box.vertex1, (155, 255, 255), 1, cv2.LINE_AA)
-    # cv2.line(emptyImage, box.vertex4, box.vertex3, (155, 255, 255), 1, cv2.LINE_AA)
-
-    # for j, label in enumerate(bboxes_out.squeeze_().detach().cpu().numpy()):
-    #     box = bBox_2D(label[0], label[1], label[2], label[3], label[4])
-    #     # box.Scale(300 / 50, 100, 20)
-    #     # box.Scale(299 / 200, 0, 0)
-    #     box.bBoxCalcVertxex()
-    #     cv2.line(emptyImage, box.vertex1, box.vertex2, (155, 255, 55), 1, cv2.LINE_AA)
-    #     cv2.line(emptyImage, box.vertex2, box.vertex4, (155, 255, 55), 1, cv2.LINE_AA)
-    #     cv2.line(emptyImage, box.vertex3, box.vertex1, (155, 255, 55), 1, cv2.LINE_AA)
-    #     cv2.line(emptyImage, box.vertex4, box.vertex3, (155, 255, 55), 1, cv2.LINE_AA)
-
-    # emptyImage = cv2.flip(emptyImage, 0)
-    # emptyImage = cv2.flip(emptyImage, 1)
-    # outImage = cv2.resize(emptyImage, (1000, 1000), interpolation=cv2.INTER_CUBIC)
-    # cv2.imshow('scan', outImage)
-    # print(step)
-    # cv2.imwrite('./testset/Result/%d.jpg' % step, outImage)
-    # cv2.waitKey()
-
-    loss = clsloss(out.mul_((1 - out.exp()).pow_(2)), targets)  # Focal loss
+    loss = focal_loss_class(out, targets)  # Focal loss
     epochtestloss = loss.item()
 
-accuracy = correct.detach().cpu().item() / testsize
-# print(correct, all, '====')
-print("loss_total: %.4f" % epochtestloss, " on testset   accuracy :  %f" % accuracy)
+accuracytest = correcttest.detach().cpu().item() / testsize
+
+print("loss_total: %.4f" % epochtestloss, " on testset   accuracy :  %f" % accuracytest)
 
 torch.save(result, "result.pt")
 torch.save(net, "nettt")

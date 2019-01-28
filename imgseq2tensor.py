@@ -22,7 +22,7 @@ if __name__ == "__main__":
                     imgseq.append(img)
                 imgtensor = torch.cat(imgseq, dim=-1)
                 # imgtensor.resize_(224, 224, 600)
-                imgtensor=torch.nn.functional.interpolate(imgtensor, 600, mode='linear')
+                imgtensor=torch.nn.functional.interpolate(imgtensor, 450, mode='linear')
                 outpath = imgoutputpath + category + '/'
                 if not os.path.exists(outpath):
                     os.makedirs(outpath)
