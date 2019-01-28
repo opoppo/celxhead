@@ -118,7 +118,7 @@ else:
 
 train_loader = data.DataLoader(
     dataset=trainset,
-    batch_size=1,  # 256 for 4 GPUs
+    batch_size=32,  # 256 for 4 GPUs
     shuffle=False,
     drop_last=False,
     # pin_memory=True,
@@ -127,18 +127,18 @@ train_loader = data.DataLoader(
 )
 val_loader = data.DataLoader(
     dataset=valset,
-    batch_size=1,  # 256 for 4 GPUs
+    batch_size=6,  # 256 for 4 GPUs
     shuffle=False,
-    drop_last=False,
+    drop_last=True,
     # pin_memory=True,
     # num_workers=24,
     # sampler=data.SubsetRandomSampler(list(range(3000, 3500, 1)))
 )
 test_loader = data.DataLoader(
     dataset=testset,
-    batch_size=1,  # 256 for 4 GPUs
+    batch_size=6,  # 256 for 4 GPUs
     shuffle=False,
-    drop_last=False,
+    drop_last=True,
     # pin_memory=True,
     # num_workers=24,
     # sampler=data.SubsetRandomSampler(list(range(3500, 4239, 1)))
@@ -154,7 +154,7 @@ if resume and (not training):
     print('nettt loaded')
 
 optimizer = torch.optim.Adam(params=net.parameters(), lr=0.001, weight_decay=0.001)
-# mseloss = nn.MSELoss(reduction='mean')
+clsloss = nn.CrossEntropyLoss(reduction='mean')
 # lambda1=lambda epoch: 10**np.random.uniform(-3,-6)
 lambda1 = lambda epoch: get_triangular_lr(epoch, 100, 10 ** (-3), 10 ** (0))
 scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda1)
@@ -162,7 +162,7 @@ scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda1)
 # training
 if training:
 
-    EPOCH = 5000
+    EPOCH = 1000
     break_flag = False
     prevvalloss, prevtrainloss = 10e30, 10e30
     ppp = 0
@@ -182,13 +182,14 @@ if training:
         for step, (x, targets) in enumerate(train_loader):
             if break_flag is True:
                 break
-            x = x.permute(0, 3, 1, 2)
             x = x.type(torch.cuda.FloatTensor)
+            targets = targets.type(torch.cuda.LongTensor)
+
             out = net(x)
             del x
 
             # print(bboxes_out.size(),bboxes.size())
-            loss = nn.CrossEntropyLoss(out, targets)
+            loss = clsloss(out, targets)
             # epochTloss += loss.item()
             epochTloss = loss.item()
 
@@ -210,10 +211,12 @@ if training:
             epochvalloss = 0
 
             for step, (x, bboxes) in enumerate(val_loader):
+                x = x.type(torch.cuda.FloatTensor)
+                targets = bboxes.type(torch.cuda.LongTensor)
                 bboxes_out = net(x)
                 del x
 
-                loss = nn.CrossEntropyLoss(out, targets)
+                loss = clsloss(out, targets)
                 # epochvalloss += loss.item()
                 epochvalloss = loss.item()
 
@@ -241,6 +244,8 @@ result = []
 epochtestloss = 0
 
 for step, (x, bboxes) in enumerate(test_loader):
+    x = x.type(torch.cuda.FloatTensor)
+    targets = bboxes.type(torch.cuda.LongTensor)
     bboxes_out = net(x)
     # print(bboxes_out.size(),bboxes.size())
     # x = x.squeeze_().permute(2, 1, 0)
@@ -276,7 +281,7 @@ for step, (x, bboxes) in enumerate(test_loader):
     # cv2.imwrite('./testset/Result/%d.jpg' % step, outImage)
     # cv2.waitKey()
 
-    loss = nn.CrossEntropyLoss(out, targets)
+    loss = clsloss(out, targets)
     epochtestloss = loss.item()
 
 print("loss_total: %.4f" % epochtestloss, " on testset")

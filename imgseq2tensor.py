@@ -18,13 +18,15 @@ if __name__ == "__main__":
                     # print(imgpath+category+'/'+seq+'/'+img)
                     img = cv2.imread(imgpath + category + '/' + seq + '/' + img)
                     img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_CUBIC)
-                    img = torch.from_numpy(img)
+                    img = torch.Tensor(img)
                     imgseq.append(img)
-                imgtensor = torch.cat(imgseq,dim=-1)
-                imgtensor.resize_(224,224,600)
+                imgtensor = torch.cat(imgseq, dim=-1)
+                # imgtensor.resize_(224, 224, 600)
+                imgtensor=torch.nn.functional.interpolate(imgtensor, 600, mode='linear')
                 outpath = imgoutputpath + category + '/'
                 if not os.path.exists(outpath):
                     os.makedirs(outpath)
-                torch.save(imgtensor, imgoutputpath + category + '/' + seq+'.pt' )
+                imgtensor = imgtensor.permute(2, 0, 1)
+                torch.save(imgtensor, imgoutputpath + category + '/' + seq + '.pt')
                 count += 1
                 print(count, '///', imgtensor.size())
