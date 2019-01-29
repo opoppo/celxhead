@@ -97,9 +97,9 @@ def focal_loss_class(predictions, targets, alpha=1, gamma=2):
 
 
 # ====================================================================================================
-training = 1  # ????========================================================================================
-resume = 0  # ====010:  test model   11X: train model   10X: train new   011: refresh dataset
-generateNewSets = 1  # REGENERATE the datasets !!!!!!!!!!!!!!!
+training = 0  # ????========================================================================================
+resume = 1  # ====010:  test model   11X: train model   10X: train new   011: refresh dataset
+generateNewSets = 0  # REGENERATE the datasets !!!!!!!!!!!!!!!
 # ====================================================================================================
 
 
@@ -163,12 +163,12 @@ test_loader = data.DataLoader(
 )
 
 if resume and training:
-    net = torch.load('net-0.2')
+    net = torch.load('net-0.3')
     print('net tmp resumed')  # ==============================================================
 
 # Predicting or Testing============
 if resume and (not training):
-    net = torch.load('net-0.2')
+    net = torch.load('net-0.3')
     print('netmp loaded')
 
 optimizer = torch.optim.Adam(params=net.parameters(), lr=0.001, weight_decay=0.001)
